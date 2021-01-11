@@ -48,6 +48,12 @@ public:
         sender.Process();
     }
 
+    // To send a message, the client first allocates a buffer.
+    // The returned buffer length is the maximum payload size.
+    // After filling in the buffer and setting the buffer len,
+    // the client can either invoke send or first prepare
+    // the datagram and then send the prepared datagram.
+    // The prepared path is mostly used for tests.
     Buffer AllocBuffer() {
         auto ptr = buf_alloc.Alloc();
 
