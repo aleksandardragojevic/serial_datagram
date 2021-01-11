@@ -8,7 +8,11 @@
 
 #include <stdint.h>
 
-#include <Arduino.h>
+#if defined(ARDUINO) && ARDUINO >= 100
+#include "Arduino.h"
+#elif defined(ARDUINO)
+#include "WProgram.h"
+#endif /* ARDUINO */
 
 #include "sdgram_defs.h"
 #include "sdgram_buf_alloc.h"
@@ -55,14 +59,24 @@ public:
     }
 
     // The buffer ownership is passed to the network object.
-    Status Send(Endpoint endp, Buffer buf) {
-        return sender.Send(endp, buf);
+    Status Send(Port port, Buffer buf) {
+        return sender.Send(port, buf);
     }
 
+    void PrepareDatagram(Port port, Buffer &buf) {
+        sender.PrepareDatagram(port, buf);
+    }
+
+    // Send an already prepared datagram.
+    Status SendPreparedDatagram(Buffer &buf) {
+        return sender.SendPreparedDatagram(buf);
+    }
+
+
     Status RegisterReceiver(
-            Endpoint endp,
+            Port port,
             Rcv &rcv) {
-        return rcv_table.Register(endp, rcv);
+        return rcv_table.Register(port, rcv);
     }
 
     const RcvStats &GetRcvStats() const {

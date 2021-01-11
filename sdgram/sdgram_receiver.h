@@ -74,6 +74,10 @@ private:
         return *reinterpret_cast<PacketHdr *>(data);
     }
 
+    const PacketHdr &Hdr() const {
+        return *reinterpret_cast<const PacketHdr *>(data);
+    }
+
     uint16_t TotalMsgSize() const {
         return Hdr().size + sizeof(PacketHdr) + sizeof(PacketTrl);
     }
@@ -90,10 +94,14 @@ private:
             return false;
         }
 
+        if(bytes_to_read > available) {
+            bytes_to_read = static_cast<uint8_t>(available);
+        }
+
         if(bytes_to_read) {
             auto bytes_read = ReadBytes(
                 reinterpret_cast<void *>(data + next),
-                min(available, MaxBytesToRead()));
+                bytes_to_read);
 
             if(!bytes_read) {
                 return false;
@@ -210,7 +218,7 @@ private:
 
         // invoke the callback
         rcv_table.Received(
-            Hdr().endp,
+            Hdr().port,
             Buffer {
                 reinterpret_cast<void *>(data + sizeof(PacketHdr)),
                 Hdr().size });
@@ -253,7 +261,7 @@ private:
         auto rcv = Hdr().crc;
 
         Hdr().crc = 0;
-        auto calc = Crc16Usb::Calc(data, TotalMsgSize());
+        auto calc = Crc16Usb::Calc(data, static_cast<size_t>(TotalMsgSize()));
 
         return calc == rcv;
     }

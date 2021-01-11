@@ -28,9 +28,21 @@ public:
         // empty
     }
 
-    Status Send(Endpoint endp, Buffer buf) {
-        CreateHdrAndTrl(endp, buf);
+    Status Send(Port port, Buffer buf) {
+        CreateHdrAndTrl(port, buf);
 
+        SendPreparedDatagram(buf);
+
+        return Status::Success;
+    }
+
+    // Adds the header and the trailer to the buffer.
+    void PrepareDatagram(Port port, Buffer &buf) {
+        CreateHdrAndTrl(port, buf);
+    }
+
+    // Send an already prepared datagram.
+    Status SendPreparedDatagram(Buffer &buf) {
         if(!queued.IsEmpty()) {
             if(queued.IsFull()) {
                 return Status::NoMoreSpace;
@@ -61,28 +73,28 @@ public:
         }
     }
 
-private:
+protected:
     //
     // Functions.
     //
-    void CreateHdrAndTrl(Endpoint endp, Buffer &buf) {
+    static void CreateHdrAndTrl(Port port, Buffer &buf) {
         auto buf_ptr = static_cast<uint8_t *>(buf.ptr);
-        auto len = buf.len + sizeof(PacketHdr) + sizeof(PacketTrl);
+        auto len = static_cast<BufferLen>(
+            buf.len + sizeof(PacketHdr) + sizeof(PacketTrl));
 
         auto hdr = reinterpret_cast<PacketHdr *>(
             buf_ptr - sizeof(PacketHdr));
 
         hdr->magic = HdrMagic;
-        hdr->endp = endp;
+        hdr->port = port;
         hdr->crc = 0;
         hdr->size = buf.len;
 
-        hdr->crc = Crc16Usb(hdr, len);
-
         auto trl = reinterpret_cast<PacketTrl *>(
             buf_ptr + buf.len);
-
         trl->magic = TrlMagic;
+
+        hdr->crc = Crc16Usb::Calc(hdr, len);
 
         buf.ptr = hdr;
         buf.len = len;

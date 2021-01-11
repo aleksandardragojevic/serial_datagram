@@ -19,9 +19,9 @@ enum class Status {
 };
 
 using BufferLen = uint8_t;
-using Endpoint = uint8_t;
+using Port = uint8_t;
 
-constexpr Endpoint InvalidEndpoint = 0xff; 
+constexpr Port InvalidPort = 0xff; 
 
 struct Buffer {
     void *ptr;

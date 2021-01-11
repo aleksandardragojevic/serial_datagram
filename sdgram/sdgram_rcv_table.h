@@ -13,8 +13,8 @@ namespace SerialDatagram {
 template<uint8_t MaxReceiverCount>
 class RcvTable {
 public:
-    Status Register(Endpoint endp, Rcv &rcv) {
-        auto existing = FindRegistered(endp);
+    Status Register(Port port, Rcv &rcv) {
+        auto existing = FindRegistered(port);
 
         if(existing != nullptr) {
             return Status::Duplicate;
@@ -26,14 +26,14 @@ public:
             return Status::NoMoreSpace;
         }
 
-        empty->endp = endp;
+        empty->port = port;
         empty->rcv = &rcv;
 
         return Status::Success;
     }
 
-    Status Received(Endpoint endp, Buffer buf) {
-        auto existing = FindRegistered(endp);
+    Status Received(Port port, Buffer buf) {
+        auto existing = FindRegistered(port);
 
         if(existing == nullptr) {
             return Status::NoReceiver;
@@ -50,21 +50,21 @@ private:
     //
     struct Registered {
         Registered()
-                : endp(InvalidEndpoint),
+                : port(InvalidPort),
                 rcv(nullptr) {
             // empty
         }
 
-        Endpoint endp;
+        Port port;
         Rcv *rcv;
     };
 
     //
     // Functions.
     //
-    Registered *FindRegistered(Endpoint endp) {
+    Registered *FindRegistered(Port port) {
         for(uint16_t i = 0;i < MaxReceiverCount;i++) {
-            if(registered[i].endp == endp) {
+            if(registered[i].port == port) {
                 return registered + i;
             }
         }
@@ -73,7 +73,7 @@ private:
     }
 
     Registered *FindEmptySlot() {
-        return FindRegistered(InvalidEndpoint);
+        return FindRegistered(InvalidPort);
     }
 
     //

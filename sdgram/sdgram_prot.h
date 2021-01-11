@@ -14,7 +14,7 @@ namespace SerialDatagram {
 struct PacketHdr {
     uint16_t magic;
     uint8_t size;
-    uint8_t endp;
+    uint8_t port;
     uint16_t crc;
 };
 

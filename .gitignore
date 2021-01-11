@@ -33,3 +33,7 @@
 
 # VS code
 **/c_cpp_properties.json
+
+# Visual studio
+x64/
+.vs/
