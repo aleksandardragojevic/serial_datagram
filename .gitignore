@@ -37,3 +37,4 @@
 # Visual studio
 x64/
 .vs/
+packages/

@@ -49,11 +49,12 @@ private:
     // Functions.
     //
     void InitBufs() {
-        auto buf = reinterpret_cast<FreeBuf *>(
-            buffers + (BufCount - 1) * BufSize);
+        auto buf = buffers + (BufCount - 1) * BufSize;
 
         for(uint16_t i = 0;i < BufCount;i++) {
-            Free(buf--);
+            Free(reinterpret_cast<FreeBuf *>(buf));
+
+            buf -= BufSize;
         }
     }
 

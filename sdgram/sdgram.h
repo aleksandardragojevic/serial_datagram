@@ -27,8 +27,11 @@ namespace SerialDatagram {
 template<typename Stream>
 class Net {
 public:
-    // this corresponds to the user payload
+    // user payload size
     static constexpr BufferLen MaxBufferLen = 56;
+
+    // buffers for parallel sends
+    static constexpr uint16_t TotalBufs = 4;
 
     Net(
         Stream &stream)
@@ -58,7 +61,7 @@ public:
         auto ptr = buf_alloc.Alloc();
 
         if(ptr) {
-            ptr = static_cast<PacketHdr *>(ptr) + 1;
+            ptr = static_cast<DatagramHdr *>(ptr) + 1;
         }
 
         return Buffer { ptr, MaxBufferLen }; 
@@ -74,10 +77,9 @@ public:
     }
 
     // Send an already prepared datagram.
-    Status SendPreparedDatagram(Buffer &buf) {
-        return sender.SendPreparedDatagram(buf);
+    Status SendDatagram(Buffer &buf) {
+        return sender.SendDatagram(buf);
     }
-
 
     Status RegisterReceiver(
             Port port,
@@ -99,9 +101,8 @@ private:
     //
     static constexpr uint16_t TotalBufLen =
         MaxBufferLen +
-        sizeof(PacketHdr) +
-        sizeof(PacketTrl);
-    static constexpr uint16_t TotalBufs = 4;
+        sizeof(DatagramHdr) +
+        sizeof(DatagramTrl);
 
     static constexpr uint8_t MaxReceivers = 4;
 

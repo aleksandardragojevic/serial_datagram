@@ -43,11 +43,11 @@ public:
         }
     }
 
-    const RcvStats &GetRcvStats() const {
+    const RcvStats &GetStats() const {
         return stats;
     }
 
-    void ClearRcvStats() {
+    void ClearStats() {
         stats.Clear();
     }
 
@@ -56,8 +56,8 @@ private:
     //
     // Constants.
     //
-    static constexpr uint8_t MinMsgSize =
-        sizeof(PacketHdr) + sizeof(PacketTrl);
+    static constexpr uint16_t MinMsgSize =
+        sizeof(DatagramHdr) + sizeof(DatagramTrl);
 
     //
     // Types.
@@ -70,20 +70,24 @@ private:
     //
     // Functions.
     //
-    PacketHdr &Hdr() {
-        return *reinterpret_cast<PacketHdr *>(data);
+    DatagramHdr &Hdr() {
+        return *reinterpret_cast<DatagramHdr *>(data);
     }
 
-    const PacketHdr &Hdr() const {
-        return *reinterpret_cast<const PacketHdr *>(data);
+    const DatagramHdr &Hdr() const {
+        return *reinterpret_cast<const DatagramHdr *>(data);
+    }
+
+    bool IsHdrReceived() const {
+        return next >= sizeof(DatagramHdr);
     }
 
     uint16_t TotalMsgSize() const {
-        return Hdr().size + sizeof(PacketHdr) + sizeof(PacketTrl);
+        return Hdr().size + sizeof(DatagramHdr) + sizeof(DatagramTrl);
     }
 
     uint16_t TrlOffset() const {
-        return Hdr().size + sizeof(PacketHdr);
+        return Hdr().size + sizeof(DatagramHdr);
     }
 
     bool ReadMoreData() {
@@ -95,7 +99,7 @@ private:
         }
 
         if(bytes_to_read > available) {
-            bytes_to_read = static_cast<uint8_t>(available);
+            bytes_to_read = static_cast<uint16_t>(available);
         }
 
         if(bytes_to_read) {
@@ -115,14 +119,14 @@ private:
         return true;
     }
 
-    uint8_t MaxBytesToRead() const {
+    uint16_t MaxBytesToRead() const {
         if(state == State::SearchStart) {
             return next < MinMsgSize
                 ? MinMsgSize - next :
                 0;
         }
 
-        if(next < sizeof(PacketHdr)) {
+        if(next < sizeof(DatagramHdr)) {
             return MinMsgSize - next;
         }
 
@@ -135,16 +139,16 @@ private:
         return ret;
     }
 
-    void ProcessSearchStart(uint8_t curr = 0) {
-        if(next < sizeof(uint16_t)) {
-            LogIncompleteHdr();
+    void ProcessSearchStart(uint16_t curr = 0) {
+        if(next < sizeof(DatagramHdrMagic)) {
+            LogIncompleteHdrMagic();
             return;
         }
 
         while(curr < next - 1) {
             uint16_t val = *reinterpret_cast<uint16_t *>(data + curr);
 
-            if(val == HdrMagic) {
+            if(val == DatagramHdrMagic) {
                 LogFoundHdrMagic();
 
                 // We rarely need to copy data. This is only needed
@@ -163,7 +167,7 @@ private:
 
                 state = State::SearchEnd;
 
-                if(next >= sizeof(PacketHdr)) {
+                if(next >= sizeof(DatagramHdr)) {
                     ProcessSearchEnd();
                 }
 
@@ -181,15 +185,20 @@ private:
         }
     }
 
-    const PacketTrl &Trl() const {
-        return *reinterpret_cast<const PacketTrl *>(
+    const DatagramTrl &Trl() const {
+        return *reinterpret_cast<const DatagramTrl *>(
             data + TrlOffset());
     }
     
     void ProcessSearchEnd() {
+        if(!IsHdrReceived()) {
+            return;
+        }
+
         auto total_msg_size = TotalMsgSize();
 
         if(total_msg_size > TotalBufLen) {
+            LogMsgTooLarge(total_msg_size);
             stats.size_error++;
             Recover();
             return;
@@ -200,7 +209,7 @@ private:
             return;
         }
 
-        if(Trl().magic != TrlMagic) {
+        if(Trl().magic != DatagramTrlMagic) {
             LogTrailerMismatch();
             stats.trl_error++;
 
@@ -216,28 +225,9 @@ private:
             return;
         }
 
-        // invoke the callback
-        rcv_table.Received(
-            Hdr().port,
-            Buffer {
-                reinterpret_cast<void *>(data + sizeof(PacketHdr)),
-                Hdr().size });
-        
-        stats.msgs++;
-        stats.bytes += TotalMsgSize();
+        InvokeCb();
 
-        // return to searching for start
-        state = State::SearchStart;
-        
-        if(next != total_msg_size) {
-            memmove(
-                reinterpret_cast<void *>(data),
-                reinterpret_cast<void *>(data + total_msg_size),
-                next - total_msg_size);
-            next -= total_msg_size;
-        } else {
-            next = 0;
-        }
+        StartNextMsg(total_msg_size);
     }
 
     void Recover() {
@@ -266,9 +256,43 @@ private:
         return calc == rcv;
     }
 
+    void InvokeCb() {
+        auto status = rcv_table.Received(
+            Hdr().port,
+            Buffer {
+                reinterpret_cast<void *>(data + sizeof(DatagramHdr)),
+                Hdr().size });
+
+        if(status == Status::Success) {
+            stats.msgs++;
+            stats.bytes += TotalMsgSize();
+        } else if(status == Status::NoReceiver) {
+            stats.rcv_error++;
+            stats.dropped_bytes += TotalMsgSize();
+        } else {
+            LogUnexpectedInvokeCb(status);
+        }
+    }
+
+    void StartNextMsg(uint16_t total_msg_size) {
+        state = State::SearchStart;
+        
+        if(next != total_msg_size) {
+            memmove(
+                reinterpret_cast<void *>(data),
+                reinterpret_cast<void *>(data + total_msg_size),
+                next - total_msg_size);
+            next -= total_msg_size;
+        } else {
+            next = 0;
+        }
+    }
+
     // logging
+#define LOGGER_PREFIX_RCV "[SDGRAM-RCV] "
+
     static void LogBytesToRead(int ret) {
-        LogVerbose("[NET-SER] Reading max ");
+        LogVerbose(LOGGER_PREFIX_RCV "Reading max ");
         LogVerbose(ret);
         LogVerboseLn(" bytes");
     }
@@ -276,7 +300,7 @@ private:
     void LogBuffer() {
         char hex[3];
 
-        LogVerbose("[NET-SER] Buf: ");
+        LogVerbose(LOGGER_PREFIX_RCV "Buf: ");
 
         for(uint8_t i = 0;i < next;i++) {
             sprintf(hex, "%02X", data[i]);
@@ -288,37 +312,49 @@ private:
     }
 
     static void LogCrcMismatch() {
-        LogVerboseLn("[NET-SER] CRC mismatch");
+        LogVerboseLn(LOGGER_PREFIX_RCV "CRC mismatch");
     }
 
     void LogTrailerMismatch() const {
-        LogVerbose("[NET-SER] trailer mismatch ");
+        LogVerbose(LOGGER_PREFIX_RCV "trailer mismatch ");
         LogVerboseLn(Trl().magic);
     }
 
-    void LogIncompleteMsg(uint16_t total_msg_size) const {
-        LogVerbose("[NET-SER] not enough bytes in the message ");
+    static void LogMsgTooLarge(uint16_t total_msg_size) {
+        LogVerbose(LOGGER_PREFIX_RCV "message too large (could be because of dropped bytes) ");
         LogVerbose(total_msg_size);
-        LogVerbose(" ");
+        LogVerbose(" > ");
+        LogVerboseLn(TotalBufLen);
+    }
+
+    void LogIncompleteMsg(uint16_t total_msg_size) const {
+        LogVerbose(LOGGER_PREFIX_RCV "not enough bytes in the message ");
+        LogVerbose(total_msg_size);
+        LogVerbose(" > ");
         LogVerboseLn(next);
     }
 
     static void LogBufMemmove() {
-        LogVerboseLn("[NET-SER] moving buffer data");
+        LogVerboseLn(LOGGER_PREFIX_RCV "moving buffer data");
     }
 
     static void LogFoundHdrMagic() {
-        LogVerboseLn("[NET-SER] found header magic");
+        LogVerboseLn(LOGGER_PREFIX_RCV "found header magic");
     }
 
-    static void LogIncompleteHdr() {
-        LogVerboseLn("[NET-SER] not enough bytes for header");
+    static void LogIncompleteHdrMagic() {
+        LogVerboseLn(LOGGER_PREFIX_RCV "not enough bytes for header magic");
     }
 
     static void LogBytesRead(uint16_t bytes_read) {
-        LogVerbose("[NET-SER] read ");
+        LogVerbose(LOGGER_PREFIX_RCV "read ");
         LogVerbose(bytes_read);
         LogVerboseLn(" bytes");
+    }
+
+    static void LogUnexpectedInvokeCb(Status status) {
+        LogVerbose(LOGGER_PREFIX_RCV "unexpected invoke status ");
+        LogVerboseLn(static_cast<int>(status));
     }
 
     //
@@ -330,7 +366,7 @@ private:
     State state;
 
     uint8_t data[TotalBufLen];
-    uint8_t next;
+    uint16_t next;
 
     RcvStats stats;
 };

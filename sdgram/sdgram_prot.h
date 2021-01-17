@@ -11,22 +11,25 @@
 namespace SerialDatagram {
 
 #pragma pack(push, 1)
-struct PacketHdr {
+struct DatagramHdr {
     uint16_t magic;
     uint8_t size;
     uint8_t port;
     uint16_t crc;
 };
 
-struct PacketTrl {
+struct DatagramTrl {
     uint16_t magic;
 };
 #pragma pack(pop)
 
-static_assert(sizeof(PacketHdr) == 6);
-static_assert(sizeof(PacketTrl) == 2);
+constexpr size_t DatagramHdrSize = 6;
+constexpr size_t DatagramTrlSize = 2;
 
-constexpr uint16_t HdrMagic = 0xa357;
-constexpr uint16_t TrlMagic = 0xc69b;
+static_assert(sizeof(DatagramHdr) == DatagramHdrSize);
+static_assert(sizeof(DatagramTrl) == DatagramTrlSize);
+
+constexpr uint16_t DatagramHdrMagic = 0xa357;
+constexpr uint16_t DatagramTrlMagic = 0xc69b;
 
 }
