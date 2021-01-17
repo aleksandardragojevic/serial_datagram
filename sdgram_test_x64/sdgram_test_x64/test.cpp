@@ -458,3 +458,18 @@ TEST(SdgramTests, SendFillChannel) {
         printf("\n");
     }
 }
+
+TEST(SdgramTests, SendQueueFull) {
+    SendTest test(SendTest::DatagramSize - 1);
+
+    SerialDatagram::Buffer buf;
+
+    for(uint16_t i = 0;i < SDgram::TotalBufs;i++) {
+        buf = test.AllocBuf();
+        auto status = test.sdgram_snd.SendDatagram(buf);
+        EXPECT_EQ(SerialDatagram::Status::Success, status);
+    }
+
+    auto status = test.sdgram_snd.SendDatagram(buf);
+    EXPECT_EQ(SerialDatagram::Status::NoMoreSpace, status);
+}
